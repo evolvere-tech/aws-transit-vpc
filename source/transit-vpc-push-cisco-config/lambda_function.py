@@ -74,7 +74,7 @@ def getNextTunnelId(ssh):
             lastTunnelNum = line.strip().partition(' ')[0].replace('Tunnel','')
 
     if lastTunnelNum == '':
-        return 1
+        return 100
     return int(lastTunnelNum) + 1
 
 # Logic to figure out existing tunnel IDs
@@ -124,6 +124,21 @@ def pushConfig(ssh,config):
     ssh.send('copy run start\n\n\n\n\n')
     log.info("%s",prompt(ssh))
     log.info("Update complete!")
+
+#Get a list of all objects that have not been processed
+def getUnprocessedItems(bucket_name, bucket_prefix):
+    unprocessed_list=[]
+    s3=boto3.client('s3',
+        config=Config(s3={'addressing_style': 'virtual'}, signature_version='s3v4'))
+    result=s3.list_objects(Bucket=bucket_name,Prefix=bucket_prefix)
+    log.info("Getting a list of all unprocessed items...")
+    for r in result['Contents']:
+        filename=r['Key'] 
+        log.info("adding filename %s to unprocessed list", filename)
+        if filename:
+            unprocessed_list.append(filename)
+
+    return unprocessed_list
 
 #Logic to determine the bucket prefix from the S3 key name that was provided
 def getBucketPrefix(bucket_name, bucket_key):
@@ -312,54 +327,49 @@ def create_cisco_config(bucket_name, bucket_key, s3_url, bgp_asn, ssh):
     return config_text
 
 def lambda_handler(event, context):
-    record=event['Records'][0]
-    bucket_name=record['s3']['bucket']['name']
-    bucket_key=record['s3']['object']['key']
-    bucket_region=record['awsRegion']
-    bucket_prefix=getBucketPrefix(bucket_name, bucket_key)
-    log.debug("Getting config")
-    stime = time.time()
-    config = getTransitConfig(bucket_name, bucket_prefix, endpoint_url[bucket_region], config_file)
-    if 'CSR1' in bucket_key:
-        csr_ip=config['PIP1']
-        csr_name='CSR1'
+    bucket_name=os.environ['BUCKET_NAME']
+    bucket_region=os.environ['BUCKET_REGION']
+    bucket_prefix=os.environ['BUCKET_PREFIX']
+    csr_name=os.environ['CSR_NAME']
+    bucket_prefix_full=bucket_prefix + csr_name + "/"
+    if 'CSR1' in csr_name:
+        csr_ip=os.environ['PIP1']
+    elif 'CSR2' in csr_name:
+        csr_ip=os.ennviron['PIP2']
     else:
-        csr_ip=config['PIP2']
-        csr_name='CSR2'
-    log.info("--- %s seconds ---", (time.time() - stime))
-    #Download private key file from secure S3 bucket
-    downloadPrivateKey(bucket_name, bucket_prefix, endpoint_url[bucket_region], config['PRIVATE_KEY'])
-    log.debug("Reading downloaded private key into memory.")
-    k = paramiko.RSAKey.from_private_key_file("/tmp/"+config['PRIVATE_KEY'])
-    #Delete the temp copy of the private key
-    os.remove("/tmp/"+config['PRIVATE_KEY'])
-    log.debug("Deleted downloaded private key.")
+        log.error("incorrect CSR specified")
+        raise Exception
+    
+    log.info("checking for unprocessed items...")
+    unprocessed_list=getUnprocessedList(bucket_name,bucket_prefix_full,csr_name)
+    log.debug("Executing Config Loop...")
+    stime = time.time()
+    for conf in processing_list:
+        bucket_key=conf
+        config = getTransitConfig(bucket_name, bucket_prefix, endpoint_url[bucket_region], config_file)
 
-    c = paramiko.SSHClient()
-    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        log.info("--- %s seconds ---", (time.time() - stime))
+        c = paramiko.SSHClient()
+        c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-    log.info("Connecting to %s (%s)", csr_name, csr_ip)
-    stime = time.time()
-    try:
-      c.connect( hostname = csr_ip, username = config['USER_NAME'], pkey = k )
-      PubKeyAuth=True
-    except paramiko.ssh_exception.AuthenticationException:
-      log.error("PubKey Authentication Failed! Connecting with password")
-      c.connect( hostname = csr_ip, username = config['USER_NAME'], password = config['PASSWORD'] )
-      PubKeyAuth=False
-    log.info("--- %s seconds ---", (time.time() - stime))
-    log.debug("Connected to %s",csr_ip)
-    ssh = c.invoke_shell()
-    log.debug("%s",prompt(ssh))
-    log.debug("Creating config.")
-    stime = time.time()
-    csr_config = create_cisco_config(bucket_name, bucket_key, endpoint_url[bucket_region], config['BGP_ASN'], ssh)
-    log.info("--- %s seconds ---", (time.time() - stime))
-    log.info("Pushing config to router.")
-    stime = time.time()
-    pushConfig(ssh,csr_config)
-    log.info("--- %s seconds ---", (time.time() - stime))
-    ssh.close()
+        log.info("Connecting to %s (%s)", csr_name, csr_ip)
+        stime = time.time()
+        #c.connect( hostname = csr_ip, username = config['USER_NAME'], password = config['PASSWORD'] )
+        c.connect( hostname = csr_ip, username = "admin", password = "admin" )
+        PubKeyAuth=False
+        log.info("--- %s seconds ---", (time.time() - stime))
+        log.debug("Connected to %s",csr_ip)
+        ssh = c.invoke_shell()
+        log.debug("%s",prompt(ssh))
+        log.debug("Creating config.")
+        stime = time.time()
+        csr_config = create_cisco_config(bucket_name, bucket_key, endpoint_url[bucket_region], config['BGP_ASN'], ssh)
+        log.info("--- %s seconds ---", (time.time() - stime))
+        log.info("Pushing config to router.")
+        stime = time.time()
+        pushConfig(ssh,csr_config)
+        log.info("--- %s seconds ---", (time.time() - stime))
+        ssh.close()
 
     return
     {
