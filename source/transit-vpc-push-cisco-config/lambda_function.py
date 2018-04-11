@@ -20,6 +20,7 @@ import time
 import os
 import string
 import logging
+
 log_level = str(os.environ.get('LOG_LEVEL')).upper()
 if log_level not in ['DEBUG', 'INFO','WARNING', 'ERROR','CRITICAL']:
     log_level = 'ERROR'
@@ -67,9 +68,10 @@ def getNextTunnelId(ssh):
     ssh.send('exit\n')
     log.debug("%s",prompt(ssh))
     lastTunnelNum=''
-    if len(output.split('`n') >= 199:
+    if len(output.split('`n')) >= 199:
         log.error("Tunnel ID greater than 199")
-        break
+        raise Exception
+        
     for line in output.split('\n'):
         line=line.replace('* Tunnel','Tunnel')
         log.debug("%s",line)
@@ -220,7 +222,8 @@ def create_cisco_config(bucket_name, bucket_key, s3_url, bgp_asn, ssh):
     log.info("%s %s with tunnel #%s and #%s.",vpn_status, vpn_connection_id, tunnelId, tunnelId+1)
     # Create or delete the VRF for this connection
     if vpn_status == 'delete':
-      break
+        log.info("we're not doing deletes yet")
+        raise Exception
       #ipsec_tunnel = vpn_connection.getElementsByTagName("ipsec_tunnel")[0]
       #customer_gateway=ipsec_tunnel.getElementsByTagName("customer_gateway")[0]
       #customer_gateway_bgp_asn=customer_gateway.getElementsByTagName("bgp")[0].getElementsByTagName("asn")[0].firstChild.data
