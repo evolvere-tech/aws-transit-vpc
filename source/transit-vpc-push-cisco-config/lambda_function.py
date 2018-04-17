@@ -20,6 +20,7 @@ import time
 import os
 import string
 import logging
+
 log_level = str(os.environ.get('LOG_LEVEL')).upper()
 if log_level not in ['DEBUG', 'INFO','WARNING', 'ERROR','CRITICAL']:
     log_level = 'ERROR'
@@ -67,6 +68,10 @@ def getNextTunnelId(ssh):
     ssh.send('exit\n')
     log.debug("%s",prompt(ssh))
     lastTunnelNum=''
+    if len(output.split('`n')) >= 199:
+        log.error("Tunnel ID greater than 199")
+        raise Exception
+        
     for line in output.split('\n'):
         line=line.replace('* Tunnel','Tunnel')
         log.debug("%s",line)
@@ -126,7 +131,7 @@ def pushConfig(ssh,config):
     log.info("Update complete!")
 
 #Get a list of all objects that have not been processed
-def getUnprocessedItems(bucket_name, bucket_prefix):
+def getUnprocessedList(bucket_name, bucket_prefix):
     unprocessed_list=[]
     s3=boto3.client('s3',
         config=Config(s3={'addressing_style': 'virtual'}, signature_version='s3v4'))
@@ -139,6 +144,17 @@ def getUnprocessedItems(bucket_name, bucket_prefix):
             unprocessed_list.append(filename)
 
     return unprocessed_list
+
+def moveToProcessed(bucket_name,bucket_key,bucket_prefix_full):
+    filename=bucket_key.split("/")[-1]
+    dest_path=bucket_prefix_full + "processed/"
+    log.info("copying the config file to processed directory...")
+    s3.copy_object(Bucket=bucket_name, 
+        CopySource=bucket_name + "/" + bucket_key, 
+        ServerSideEncryption='aws:kms', Key=dest_path + filename)
+    log.info("deleting the processed config file...")
+    s3.delete_object(Bucket=bucket_name, Key=dest_path + filename)
+    return
 
 #Logic to determine the bucket prefix from the S3 key name that was provided
 def getBucketPrefix(bucket_name, bucket_key):
@@ -206,30 +222,32 @@ def create_cisco_config(bucket_name, bucket_key, s3_url, bgp_asn, ssh):
     log.info("%s %s with tunnel #%s and #%s.",vpn_status, vpn_connection_id, tunnelId, tunnelId+1)
     # Create or delete the VRF for this connection
     if vpn_status == 'delete':
-      ipsec_tunnel = vpn_connection.getElementsByTagName("ipsec_tunnel")[0]
-      customer_gateway=ipsec_tunnel.getElementsByTagName("customer_gateway")[0]
-      customer_gateway_bgp_asn=customer_gateway.getElementsByTagName("bgp")[0].getElementsByTagName("asn")[0].firstChild.data
-      #Remove VPN configuration for both tunnels
-      config_text = ['router bgp {}'.format(customer_gateway_bgp_asn)]
-      config_text.append('  no address-family ipv4 vrf {}'.format(vpn_connection_id))
-      config_text.append('exit')
-      config_text.append('no ip vrf {}'.format(vpn_connection_id))
-      config_text.append('interface Tunnel{}'.format(tunnelId))
-      config_text.append('  shutdown')
-      config_text.append('exit')
-      config_text.append('no interface Tunnel{}'.format(tunnelId))
-      config_text.append('interface Tunnel{}'.format(tunnelId+1))
-      config_text.append('  shutdown')
-      config_text.append('exit')
-      config_text.append('no interface Tunnel{}'.format(tunnelId+1))
-      config_text.append('no route-map rm-{} permit'.format(vpn_connection_id))
-      # Cisco requires waiting 60 seconds before removing the isakmp profile
-      config_text.append('WAIT')
-      config_text.append('WAIT')
-      config_text.append('no crypto isakmp profile isakmp-{}-{}'.format(vpn_connection_id,tunnelId))
-      config_text.append('no crypto isakmp profile isakmp-{}-{}'.format(vpn_connection_id,tunnelId+1))
-      config_text.append('no crypto keyring keyring-{}-{}'.format(vpn_connection_id,tunnelId))
-      config_text.append('no crypto keyring keyring-{}-{}'.format(vpn_connection_id,tunnelId+1))
+        log.info("we're not doing deletes yet")
+        raise Exception
+      #ipsec_tunnel = vpn_connection.getElementsByTagName("ipsec_tunnel")[0]
+      #customer_gateway=ipsec_tunnel.getElementsByTagName("customer_gateway")[0]
+      #customer_gateway_bgp_asn=customer_gateway.getElementsByTagName("bgp")[0].getElementsByTagName("asn")[0].firstChild.data
+      ##Remove VPN configuration for both tunnels
+      #config_text = ['router bgp {}'.format(customer_gateway_bgp_asn)]
+      #config_text.append('  no address-family ipv4 vrf {}'.format(vpn_connection_id))
+      #config_text.append('exit')
+      #config_text.append('no ip vrf {}'.format(vpn_connection_id))
+      #config_text.append('interface Tunnel{}'.format(tunnelId))
+      #config_text.append('  shutdown')
+      #config_text.append('exit')
+      #config_text.append('no interface Tunnel{}'.format(tunnelId))
+      #config_text.append('interface Tunnel{}'.format(tunnelId+1))
+      #config_text.append('  shutdown')
+      #config_text.append('exit')
+      #config_text.append('no interface Tunnel{}'.format(tunnelId+1))
+      #config_text.append('no route-map rm-{} permit'.format(vpn_connection_id))
+      ## Cisco requires waiting 60 seconds before removing the isakmp profile
+      #config_text.append('WAIT')
+      #config_text.append('WAIT')
+      #config_text.append('no crypto isakmp profile isakmp-{}-{}'.format(vpn_connection_id,tunnelId))
+      #config_text.append('no crypto isakmp profile isakmp-{}-{}'.format(vpn_connection_id,tunnelId+1))
+      #config_text.append('no crypto keyring keyring-{}-{}'.format(vpn_connection_id,tunnelId))
+      #config_text.append('no crypto keyring keyring-{}-{}'.format(vpn_connection_id,tunnelId+1))
     else:
       # Create global tunnel configuration
       config_text = ['ip vrf {}'.format(vpn_connection_id)]
@@ -328,25 +346,26 @@ def create_cisco_config(bucket_name, bucket_key, s3_url, bgp_asn, ssh):
 
 def lambda_handler(event, context):
     bucket_name=os.environ['BUCKET_NAME']
-    bucket_region=os.environ['BUCKET_REGION']
     bucket_prefix=os.environ['BUCKET_PREFIX']
     csr_name=os.environ['CSR_NAME']
     bucket_prefix_full=bucket_prefix + csr_name + "/"
+    sess = boto3.session.Session()
+    bucket_region = sess.region_name
+    config = getTransitConfig(bucket_name, bucket_prefix, endpoint_url[bucket_region], config_file)
     if 'CSR1' in csr_name:
-        csr_ip=os.environ['PIP1']
+        csr_ip=config['PIP1']
     elif 'CSR2' in csr_name:
-        csr_ip=os.ennviron['PIP2']
+        csr_ip=config['PIP2']
     else:
         log.error("incorrect CSR specified")
         raise Exception
     
     log.info("checking for unprocessed items...")
-    unprocessed_list=getUnprocessedList(bucket_name,bucket_prefix_full,csr_name)
+    unprocessed_list=getUnprocessedList(bucket_name,bucket_prefix_full)
     log.debug("Executing Config Loop...")
     stime = time.time()
-    for conf in processing_list:
+    for conf in unprocessed_list:
         bucket_key=conf
-        config = getTransitConfig(bucket_name, bucket_prefix, endpoint_url[bucket_region], config_file)
 
         log.info("--- %s seconds ---", (time.time() - stime))
         c = paramiko.SSHClient()
@@ -355,7 +374,7 @@ def lambda_handler(event, context):
         log.info("Connecting to %s (%s)", csr_name, csr_ip)
         stime = time.time()
         #c.connect( hostname = csr_ip, username = config['USER_NAME'], password = config['PASSWORD'] )
-        c.connect( hostname = csr_ip, username = "admin", password = "admin" )
+        c.connect( hostname = csr_ip, username = config['USER_NAME'], password = config['PASSWORD'], look_for_keys=False )
         PubKeyAuth=False
         log.info("--- %s seconds ---", (time.time() - stime))
         log.debug("Connected to %s",csr_ip)
@@ -370,6 +389,8 @@ def lambda_handler(event, context):
         pushConfig(ssh,csr_config)
         log.info("--- %s seconds ---", (time.time() - stime))
         ssh.close()
+        #move the old config to processed
+        moveToProcessed(bucket_name,bucket_key,bucket_prefix_full)
 
     return
     {
