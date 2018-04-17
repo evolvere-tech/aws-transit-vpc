@@ -28,7 +28,7 @@
       "Description" : "The name of the file in the s3 bucket for the poller",
       "Type" : "String",
       "Default" : "transit-vpc-poller.zip"
-    }
+    },
     "CSRUsername": {
       "Description" : "The CSR Username to pass to the lambda",
       "Type" : "String",
@@ -154,6 +154,10 @@
       "KeyName" : { "default" : "SSH Key to access CSR" },
       "CSRUsername" : { "default" : "username to access CSR" },
       "CSRPassword" : { "default" : "password to access CSR" },
+      "S3ConfiguratorBucket" : { "default" : "bucket name for configurator code"},
+      "S3ConfiguratorKey" : { "default" : "key name for configurator code"},
+      "S3PollerBucket" : { "default" : "bucket name for poller code"},
+      "S3PollerKey" : { "default" : "key name for poller code"},
       "S3Prefix" : { "default" : "Prefix for S3 Objects" },
       "LicenseModel" : { "default" : "License Model" },
       "TerminationProtection" : { "default" : "Enable Termination Protection" },
@@ -749,6 +753,15 @@
          } ]
         }
     },
+    "PermissionForCSR1ConfigEvent": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": { "Ref": "CiscoConfigFunction1" },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn": { "Fn::GetAtt": ["CiscoConfigEvent1", "Arn"] }
+      }
+    },
    "CiscoConfigEvent2": {
        "Type": "AWS::Events::Rule",
        "Properties": {
@@ -760,6 +773,15 @@
            "Arn": { "Fn::GetAtt": [ "CiscoConfigFunction2", "Arn" ] }
          } ]
         }
+    },
+    "PermissionForCSR2ConfigEvent": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": { "Ref": "CiscoConfigFunction2" },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn": { "Fn::GetAtt": ["CiscoConfigEvent2", "Arn"] }
+      }
     },
 
    "TransitVpcS3Config": {
@@ -879,6 +901,28 @@
         }
       }
     },
+    "PollerEvent": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Description": "Transit VPC: Rule to trigger VGW-Poller every minute to find VGWs that need to be attached to the transit VPC.",
+        "ScheduleExpression": "cron(0 * * * ? *)",
+        "State": "ENABLED",
+        "Targets": [ {
+          "Id": { "Fn::Join": ["-", [ { "Ref" : "AWS::StackName" },"VGW-Poller-1min" ]] },
+          "Arn": { "Fn::GetAtt": [ "PollerFunction", "Arn" ] }
+        } ]
+      }
+    },
+    "PermissionForPollerEvent": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": { "Ref": "PollerFunction" },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn": { "Fn::GetAtt": ["PollerEvent", "Arn"] }
+      }
+    },
+
     "CSRSecurityGroup" : {
       "Type" : "AWS::EC2::SecurityGroup",
       "Properties" : {
