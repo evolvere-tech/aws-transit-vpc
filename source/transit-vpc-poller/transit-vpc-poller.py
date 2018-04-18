@@ -1,16 +1,3 @@
-######################################################################################################################
-#  Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.                                           #
-#                                                                                                                    #
-#  Licensed under the Amazon Software License (the "License"). You may not use this file except in compliance        #
-#  with the License. A copy of the License is located at                                                             #
-#                                                                                                                    #
-#      http://aws.amazon.com/asl/                                                                                    #
-#                                                                                                                    #
-#  or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES #
-#  OR CONDITIONS OF ANY KIND, express or implied. See the License for the specific language governing permissions    #
-#  and limitations under the License.                                                                                #
-######################################################################################################################
-
 import boto3
 from botocore.client import Config
 from xml.dom import minidom
@@ -68,37 +55,6 @@ def updateConfigXML(xml, config, vgwTags, account_id, csr_number):
   xmldoc.childNodes[0].appendChild(transitConfig)
   return str(xmldoc.toxml())
 
-#This function determines whether or not Anonymous data should be send and, if so, sends it
-def sendAnonymousData(config, vgwTags, region_id, vpn_connections):
-  #Code to send anonymous data if enabled
-  if config['SENDDATA'] == "Yes":
-    log.debug("Sending Anonymous Data")
-    dataDict = {}
-    postDict = {}
-    dataDict['region'] = region_id
-    dataDict['vpn_connections'] = vpn_connections
-    if vgwTags[config['HUB_TAG']] == config['HUB_TAG_VALUE']:
-      dataDict['status'] = "create"
-    else:
-      dataDict['status'] = "delete"
-    dataDict['preferred_path'] = vgwTags.get(config.get('PREFERRED_PATH_TAG','none'), 'none')
-    dataDict['version'] = '3'
-    postDict['Data'] = dataDict
-    postDict['TimeStamp'] = str(datetime.datetime.now())
-    postDict['Solution'] = 'SO0001'
-    postDict['UUID'] = config['UUID']
-    # API Gateway URL to make HTTP POST call
-    url = 'https://metrics.awssolutionsbuilder.com/generic'
-    data=json.dumps(postDict)
-    log.info(data)
-    headers = {'content-type': 'application/json'}
-    req = urllib2.Request(url, data, headers)
-    rsp = urllib2.urlopen(req)
-    rspcode = rsp.getcode()
-    content = rsp.read()
-    log.debug("Response from APIGateway: %s, %s", rspcode, content)
-
-
 def lambda_handler(event, context):
   #Figure out the account number by parsing this function's ARN
   account_id = re.findall(':(\d+):', context.invoked_function_arn)[0]
@@ -111,7 +67,7 @@ def lambda_handler(event, context):
   # use this variable to determine if a VGW has been processed so we will only process one VGW per run (one per minute)
   processed_vgw = False
   #Get list of regions so poller can look for VGWs in all regions
-  ec2=boto3.client('ec2',region_name='us-east-1')
+  ec2=boto3.client('ec2',region_name='eu-west-1')
   regions=ec2.describe_regions()
   for region in regions['Regions']:
     #Get region name for the current region
@@ -215,43 +171,41 @@ def lambda_handler(event, context):
     	)
         log.debug('Pushed VPN configurations to S3...')
         processed_vgw = True
-        sendAnonymousData(config, vgwTags, region_id, 2)
 
       #Need to delete VPN connections if this is no longer a spoke VPC (tagged for spoke, but tag != spoke tag value) but Transit VPC connections exist
-      if not spoke_vgw and vpn_existing:
-        log.info('Found old VGW (%s) with VPN connections to remove.', vgw['VpnGatewayId'])
-        #We need to go through the region's VPN connections to find the ones to delete
-        for vpn in vpns['VpnConnections']:
-          if vpn['VpnGatewayId']==vgw['VpnGatewayId']:
-            #Put the VPN tags into a dict for easier processing
-            vpnTags = getTags(vpn['Tags'])
-            if vpnTags['transitvpc:endpoint'] == 'CSR1':
-              csrNum = '1'
-            else:
-              csrNum = '2'
-            #Need to get VPN configuration to remove from CSR
-            vpn_config=vpn['CustomerGatewayConfiguration']
-            #Update VPN configuration XML with transit VPC specific configuration info for this connection
-            vpn_config=updateConfigXML(vpn_config, config, vgwTags, account_id, vpnTags['transitvpc:endpoint'])
-            s3.put_object(
-                  Body=str.encode(vpn_config),
-                  Bucket=bucket_name,
-                  Key=bucket_prefix+'CSR'+csrNum+'/'+region_id+'-'+vpn['VpnConnectionId']+'.conf',
-                  ACL='bucket-owner-full-control',
-                  ServerSideEncryption='aws:kms',
-                  SSEKMSKeyId=config['KMS_KEY']
-            )
-            log.debug('Pushed CSR%s configuration to S3.', csrNum)
-            #now we need to delete the VPN connection
-            ec2.delete_vpn_connection(VpnConnectionId=vpn['VpnConnectionId'])
-            log.info('Deleted VPN connection (%s) to CSR%s', vpn['VpnConnectionId'], csrNum)
-            #Attempt to clean up the CGW. This will only succeed if the CGW has no VPN connections are deleted
-            try:
-                ec2.delete_customer_gateway(CustomerGatewayId=vpn['CustomerGatewayId'])
-                log.info("Cleaned up %s since it has no VPN connections left", vpn['CustomerGatewayId'])
-            except:
-                log.debug("%s still has existing VPN connections", vpn['CustomerGatewayId'])
-            sendAnonymousData(config, vgwTags, region_id, 1)
+      #if not spoke_vgw and vpn_existing:
+      #  log.info('Found old VGW (%s) with VPN connections to remove.', vgw['VpnGatewayId'])
+      #  #We need to go through the region's VPN connections to find the ones to delete
+      #  for vpn in vpns['VpnConnections']:
+      #    if vpn['VpnGatewayId']==vgw['VpnGatewayId']:
+      #      #Put the VPN tags into a dict for easier processing
+      #      vpnTags = getTags(vpn['Tags'])
+      #      if vpnTags['transitvpc:endpoint'] == 'CSR1':
+      #        csrNum = '1'
+      #      else:
+      #        csrNum = '2'
+      #      #Need to get VPN configuration to remove from CSR
+      #      vpn_config=vpn['CustomerGatewayConfiguration']
+      #      #Update VPN configuration XML with transit VPC specific configuration info for this connection
+      #      vpn_config=updateConfigXML(vpn_config, config, vgwTags, account_id, vpnTags['transitvpc:endpoint'])
+      #      s3.put_object(
+      #            Body=str.encode(vpn_config),
+      #            Bucket=bucket_name,
+      #            Key=bucket_prefix+'CSR'+csrNum+'/'+region_id+'-'+vpn['VpnConnectionId']+'.conf',
+      #            ACL='bucket-owner-full-control',
+      #            ServerSideEncryption='aws:kms',
+      #            SSEKMSKeyId=config['KMS_KEY']
+      #      )
+      #      log.debug('Pushed CSR%s configuration to S3.', csrNum)
+      #      #now we need to delete the VPN connection
+      #      ec2.delete_vpn_connection(VpnConnectionId=vpn['VpnConnectionId'])
+      #      log.info('Deleted VPN connection (%s) to CSR%s', vpn['VpnConnectionId'], csrNum)
+      #      #Attempt to clean up the CGW. This will only succeed if the CGW has no VPN connections are deleted
+      #      try:
+      #          ec2.delete_customer_gateway(CustomerGatewayId=vpn['CustomerGatewayId'])
+      #          log.info("Cleaned up %s since it has no VPN connections left", vpn['CustomerGatewayId'])
+      #      except:
+      #          log.debug("%s still has existing VPN connections", vpn['CustomerGatewayId'])
 
       # if a VGW has been processed, then we need to break out of VGW processing
       if processed_vgw:
