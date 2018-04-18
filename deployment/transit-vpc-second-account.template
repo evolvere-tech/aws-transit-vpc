@@ -17,8 +17,8 @@
   "Mappings" : {
     "Function" : {
       "Poller" : {
-        "S3Bucket" : "%%BUCKET_NAME%%",
-	      "S3Key" : "transit-vpc/latest/transit-vpc-poller.zip",
+        "S3Bucket" : "evolvere-test-configs",
+	      "S3Key" : "transit-vpc-poller.zip",
         "Name" : "vgw-poller",
         "Handler": "transit-vpc-poller.lambda_handler",
         "Description": "Transit VPC: Poller function responsible for identifying specifically tagged VGWs and creating VPN connections to transit VPC.",
@@ -100,7 +100,7 @@
       "Properties": {
         "FunctionName" : { "Fn::Join": ["-", [ { "Ref" : "AWS::StackName" }, { "Fn::FindInMap" : [ "Function", "Poller", "Name"]}	]] },
         "Code": {
-          "S3Bucket": { "Fn::Join": ["", [ { "Fn::FindInMap" : [ "Function", "Poller", "S3Bucket"]}, "-", {"Ref": "AWS::Region"} ]] },
+          "S3Bucket": { "Fn::Join": ["", [ { "Fn::FindInMap" : [ "Function", "Poller", "S3Bucket"]} ]] },
           "S3Key": { "Fn::FindInMap" : [ "Function", "Poller", "S3Key"]}
         },
         "MemorySize": { "Fn::FindInMap" : [ "Function", "Poller", "MemorySize"]},

@@ -672,7 +672,14 @@
                     "s3:*"
 		  ],
 		  "Resource": { "Fn::Join": ["", ["arn:aws:s3:::", { "Ref" : "VPNConfigS3Bucket" }, "/", "*" ]] }
-		}
+		},
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                   "s3:*"
+                 ],
+                 "Resource": { "Fn::Join": ["", ["arn:aws:s3:::", { "Ref" : "VPNConfigS3Bucket" } ]] }
+                }
 	     ]
         }
       }
