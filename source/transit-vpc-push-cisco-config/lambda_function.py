@@ -138,6 +138,8 @@ def getUnprocessedList(bucket_name, bucket_prefix):
     result=s3.list_objects(Bucket=bucket_name,Prefix=bucket_prefix)
     log.info("Getting a list of all unprocessed items...")
     for r in result['Contents']:
+        if "processed" in r["Key"]:
+            continue
         filename=r['Key'] 
         log.info("adding filename %s to unprocessed list", filename)
         if filename:
@@ -145,15 +147,26 @@ def getUnprocessedList(bucket_name, bucket_prefix):
 
     return unprocessed_list
 
-def moveToProcessed(bucket_name,bucket_key,bucket_prefix_full):
+def moveToProcessed(bucket_name,bucket_key,bucket_prefix_full,s3_url):
     filename=bucket_key.split("/")[-1]
     dest_path=bucket_prefix_full + "processed/"
+    key_pth=dest_path + filename
     log.info("copying the config file to processed directory...")
-    s3.copy_object(Bucket=bucket_name, 
+    log.info("the bucket_key is - %s", bucket_key)
+    log.info("the bucket prefix full is - %s", bucket_prefix_full)
+    log.info("the processed file details are - %s ", filename)
+    log.info("the dest_path is - %s", dest_path)
+    log.info("the bucket_name is - %s",bucket_name)
+    log.info("the CopySource is %s",bucket_name + "/" + bucket_key)
+    log.info("the Key is %s",key_pth)
+
+    sthree=boto3.client('s3', endpoint_url=s3_url,
+        config=Config(s3={'addressing_style': 'virtual'}, signature_version='s3v4'))
+    sthree.copy_object(Bucket=bucket_name, 
         CopySource=bucket_name + "/" + bucket_key, 
         ServerSideEncryption='aws:kms', Key=dest_path + filename)
     log.info("deleting the processed config file...")
-    s3.delete_object(Bucket=bucket_name, Key=dest_path + filename)
+    sthree.delete_object(Bucket=bucket_name, Key=bucket_key)
     return
 
 #Logic to determine the bucket prefix from the S3 key name that was provided
@@ -390,7 +403,7 @@ def lambda_handler(event, context):
         log.info("--- %s seconds ---", (time.time() - stime))
         ssh.close()
         #move the old config to processed
-        moveToProcessed(bucket_name,bucket_key,bucket_prefix_full)
+        moveToProcessed(bucket_name,bucket_key,bucket_prefix_full,endpoint_url[bucket_region])
 
     return
     {
