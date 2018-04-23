@@ -39,6 +39,11 @@
       "Type" : "String",
       "Default" : "admin"
     },
+    "CSRIngressCidr": {
+      "Description" : "The CIDR for an additional ingress source to the Cisco CSR's",
+      "Type" : "String",
+      "Default" : "X.X.X.X/32"
+    }
     "TerminationProtection" : {
       "Description" : "Enable termination protection on the CSR EC2 instances to avoid accidential CSR termination?",
       "Type" : "String",
@@ -448,13 +453,15 @@
 	  "ios-config-18=\"set transform-set ipsec-prop-vpn-aws\"\n",
 	  "ios-config-19=\"router bgp ", { "Ref" : "BgpAsn" },"\"\n",
 	  "ios-config-20=\"bgp log-neighbor-changes\"\n",
-	  "ios-config-21=\"ip vrf vpn0\"\n",
+	  "ios-config-21=\"ip vrf CLOUD\"\n",
 	  "ios-config-22=\"rd ", { "Ref" : "BgpAsn" }, ":0\"\n",
-	  "ios-config-23=\"ip ssh pubkey-chain\"\n",
-	  "ios-config-24=\"username ", { "Ref" : "CSRUsername" }, "\"\n",
-	  "ios-config-25=\"key-hash ssh-rsa ", { "Fn::GetAtt" : [ "CreateRsaKey", "Fingerprint" ] },"\"\n",
-	  "ios-config-26=\"ip ssh server algorithm authentication password publickey\"\n",
-	  "ios-config-27=\"ip ssh maxstartups 1\"\n"
+          "ios-config-23=\"route-target export ", { "Ref" : "BgpAsn" }, ":200\"\n",
+          "ios-config-24=\"route-target import ", { "Ref" : "BgpAsn" }, ":100\"\n",
+	  "ios-config-25=\"ip ssh pubkey-chain\"\n",
+	  "ios-config-26=\"username ", { "Ref" : "CSRUsername" }, "\"\n",
+	  "ios-config-27=\"key-hash ssh-rsa ", { "Fn::GetAtt" : [ "CreateRsaKey", "Fingerprint" ] },"\"\n",
+	  "ios-config-28=\"ip ssh server algorithm authentication password publickey\"\n",
+	  "ios-config-29=\"ip ssh maxstartups 1\"\n"
         ]]}}
       }
     },
@@ -497,13 +504,15 @@
 	  "ios-config-18=\"set transform-set ipsec-prop-vpn-aws\"\n",
 	  "ios-config-19=\"router bgp ", { "Ref" : "BgpAsn" },"\"\n",
 	  "ios-config-20=\"bgp log-neighbor-changes\"\n",
-	  "ios-config-21=\"ip vrf vpn0\"\n",
+	  "ios-config-21=\"ip vrf CLOUD\"\n",
 	  "ios-config-22=\"rd ", { "Ref" : "BgpAsn" }, ":0\"\n",
-	  "ios-config-23=\"ip ssh pubkey-chain\"\n",
-	  "ios-config-24=\"username ", { "Ref" : "CSRUsername" }, "\"\n",
-	  "ios-config-25=\"key-hash ssh-rsa ", { "Fn::GetAtt" : [ "CreateRsaKey", "Fingerprint" ] },"\"\n",
-	  "ios-config-26=\"ip ssh server algorithm authentication password publickey\"\n",
-	  "ios-config-27=\"ip ssh maxstartups 1\"\n"
+          "ios-config-23=\"route-target export ", { "Ref" : "BgpAsn" }, ":200\"\n",
+          "ios-config-24=\"route-target import ", { "Ref" : "BgpAsn" }, ":100\"\n",
+	  "ios-config-25=\"ip ssh pubkey-chain\"\n",
+	  "ios-config-26=\"username ", { "Ref" : "CSRUsername" }, "\"\n",
+	  "ios-config-27=\"key-hash ssh-rsa ", { "Fn::GetAtt" : [ "CreateRsaKey", "Fingerprint" ] },"\"\n",
+	  "ios-config-28=\"ip ssh server algorithm authentication password publickey\"\n",
+	  "ios-config-29=\"ip ssh maxstartups 1\"\n"
         ]]}}
       }
     },
@@ -936,7 +945,8 @@
         "GroupDescription" : "CSR Security Group Rules",
         "VpcId" : { "Ref" : "TransitVPC" },
         "SecurityGroupIngress" : [
-           { "IpProtocol" : "tcp", "FromPort" : "22",  "ToPort" : "22",  "SourceSecurityGroupId" : { "Ref" : "CiscoConfigSecurityGroup" }}
+           { "IpProtocol" : "tcp", "FromPort" : "22",  "ToPort" : "22",  "SourceSecurityGroupId" : { "Ref" : "CiscoConfigSecurityGroup" }},
+           { "IpProtocol" : "tcp", "FromPort" : "22",  "ToPort" : "22",  "CidrIp" : { "Ref" : "CSRIngressCidr" }}
 	],
         "SecurityGroupEgress" : [
            { "IpProtocol" : "-1", "FromPort" : "0", "ToPort" : "65535", "CidrIp" : "0.0.0.0/0" } ]
