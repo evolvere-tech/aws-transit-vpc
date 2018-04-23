@@ -265,8 +265,8 @@ def create_cisco_config(bucket_name, bucket_key, s3_url, bgp_asn, ssh):
       # Create global tunnel configuration
       config_text = ['ip vrf {}'.format(vpn_connection_id)]
       config_text.append(' rd {}:{}'.format(bgp_asn, tunnelId))
-      config_text.append(' route-target export {}:0'.format(bgp_asn))
-      config_text.append(' route-target import {}:0'.format(bgp_asn))
+      config_text.append(' route-target export {}:100'.format(bgp_asn))
+      config_text.append(' route-target import {}:200'.format(bgp_asn))
       config_text.append('exit')
       # Check to see if a route map is needed for creating a preferred path
       if preferred_path != 'none':
@@ -328,6 +328,9 @@ def create_cisco_config(bucket_name, bucket_key, s3_url, bgp_asn, ssh):
         config_text.append('exit')
         config_text.append('interface Tunnel{}'.format(tunnelId))
 	config_text.append('  description {} from {} to {} for account {}'.format(vpn_connection_id, vpn_gateway_id, customer_gateway_id, account_id))
+        config_text.append('  bandwidth 1000000')
+        config_text.append('  ip mtu 1340')
+        config_text.append('  ip tcp adjust-mss 1300')
         config_text.append('  ip vrf forwarding {}'.format(vpn_connection_id))
         config_text.append('  ip address {} 255.255.255.252'.format(customer_gateway_tunnel_inside_address_ip_address))
         config_text.append('  ip virtual-reassembly')
@@ -341,6 +344,7 @@ def create_cisco_config(bucket_name, bucket_key, s3_url, bgp_asn, ssh):
         config_text.append('router bgp {}'.format(customer_gateway_bgp_asn))
         config_text.append('  address-family ipv4 vrf {}'.format(vpn_connection_id))
         config_text.append('  neighbor {} remote-as {}'.format(vpn_gateway_tunnel_inside_address_ip_address, vpn_gateway_bgp_asn))
+        config_text.append('  neighbor {} maximum-prefix 2'.format(vpn_gateway_tunnel_inside_address_ip_address))
         if preferred_path != 'none':
           config_text.append('  neighbor {} route-map rm-{} out'.format(vpn_gateway_tunnel_inside_address_ip_address, vpn_connection_id))
         config_text.append('  neighbor {} timers 10 30 30'.format(vpn_gateway_tunnel_inside_address_ip_address))
