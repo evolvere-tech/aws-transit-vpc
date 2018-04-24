@@ -43,7 +43,7 @@
       "Description" : "The CIDR for an additional ingress source to the Cisco CSR's",
       "Type" : "String",
       "Default" : "X.X.X.X/32"
-    }
+    },
     "TerminationProtection" : {
       "Description" : "Enable termination protection on the CSR EC2 instances to avoid accidential CSR termination?",
       "Type" : "String",
