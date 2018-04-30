@@ -78,6 +78,8 @@ def getNextTunnelId(ssh):
         if line.strip()[:6] == 'Tunnel':
             lastTunnelNum = line.strip().partition(' ')[0].replace('Tunnel','')
 
+# add 100 modifier instead of default 1
+
     if lastTunnelNum == '':
         return 100
     return int(lastTunnelNum) + 1
@@ -130,7 +132,9 @@ def pushConfig(ssh,config):
     log.info("%s",prompt(ssh))
     log.info("Update complete!")
 
-#Get a list of all objects that have not been processed
+#Get a list of all objects that have not been processed for batch processesing of config files
+#This is a departure from the original as that was triggered by S3 put events
+#Uses simple boto call to s3 list_objects to generate a list of files to get config from
 def getUnprocessedList(bucket_name, bucket_prefix):
     unprocessed_list=[]
     s3=boto3.client('s3',
@@ -147,6 +151,9 @@ def getUnprocessedList(bucket_name, bucket_prefix):
 
     return unprocessed_list
 
+#In order to track progress and only process once, we need to move the objects to a new prefix
+#This prevents the function above from adding it to the unprocessed list
+#Use S3 copy_object and deletes the original once done as there is no move method available
 def moveToProcessed(bucket_name,bucket_key,bucket_prefix_full,s3_url):
     filename=bucket_key.split("/")[-1]
     dest_path=bucket_prefix_full + "processed/"
@@ -192,6 +199,7 @@ def putTransitConfig(bucket_name, bucket_prefix, s3_url, config_file, config):
     s3.put_object(Bucket=bucket_name,Key=bucket_prefix+config_file,Body=str(config))
 
 #Logic to download the SSH private key from S3 to be used for SSH public key authentication
+#Have left this code in, however, it is not used currently
 def downloadPrivateKey(bucket_name, bucket_prefix, s3_url, prikey):
     if os.path.exists('/tmp/'+prikey):
         os.remove('/tmp/'+prikey)
@@ -201,6 +209,7 @@ def downloadPrivateKey(bucket_name, bucket_prefix, s3_url, prikey):
     s3.download_file(bucket_name,bucket_prefix+prikey, '/tmp/'+prikey)
 
 #Logic to create the appropriate Cisco configuration
+#Bespoke updates to cisco config...
 def create_cisco_config(bucket_name, bucket_key, s3_url, bgp_asn, ssh):
     log.info("Processing %s/%s", bucket_name, bucket_key)
 
@@ -362,6 +371,12 @@ def create_cisco_config(bucket_name, bucket_key, s3_url, bgp_asn, ssh):
     return config_text
 
 def lambda_handler(event, context):
+    '''
+    Main lambda handler which has been changed to run on a specific CSR at a time. This is set by environment variable
+    as part of the cloud formation template to create it. The for loop makes use of the unprocessed list to create a 
+    runbook of changes to iterate through. This means that changes are batched but also, in the event of a failure, its
+    easy to see where execution stopped and creates a point in time to recover from
+    '''
     bucket_name=os.environ['BUCKET_NAME']
     bucket_prefix=os.environ['BUCKET_PREFIX']
     csr_name=os.environ['CSR_NAME']

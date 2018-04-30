@@ -59,7 +59,7 @@ def lambda_handler(event, context):
 
   aws_session = boto3.session.Session()
   region_id = aws_session.region_name
-  bucket_region = bucket_name + region_id
+  bucket_region = bucket_name #+ region_id  <- commented this out for now as it is confusing matters as far as bucket names are concerned
   log.info('My region is: %s',region_id)
   log.info('My region bucket is: %s', bucket_region)
 
